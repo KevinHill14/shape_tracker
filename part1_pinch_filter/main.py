@@ -96,6 +96,11 @@ def main():
     cap = cv2.VideoCapture(0)
     current_effect = 1
 
+    # Create the window up front and force it fullscreen, so it doesn't
+    # require the user to manually maximize it each run.
+    cv2.namedWindow("Pinch Filter", cv2.WINDOW_NORMAL)
+    cv2.setWindowProperty("Pinch Filter", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+
     while cap.isOpened():
         success, frame = cap.read()
         if not success:
