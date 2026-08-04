@@ -19,6 +19,19 @@ from mediapipe.tasks.python import vision
 
 MODEL_PATH = "part1_pinch_filter/hand_landmarker.task"
 
+# Pairs of landmark indices that form the hand "skeleton" (finger bones).
+# The Tasks API doesn't expose this as a constant the way the legacy
+# mp.solutions.hands module does, so it's listed out directly here -
+# each pair is one bone segment between two of the 21 landmarks.
+HAND_CONNECTIONS = [
+    (0, 1), (1, 2), (2, 3), (3, 4),        # thumb
+    (0, 5), (5, 6), (6, 7), (7, 8),        # index finger
+    (5, 9), (9, 10), (10, 11), (11, 12),   # middle finger
+    (9, 13), (13, 14), (14, 15), (15, 16),  # ring finger
+    (13, 17), (17, 18), (18, 19), (19, 20),  # pinky
+    (0, 17),                                # wrist to pinky base
+]
+
 EFFECT_NAMES = {
     1: "Blur",
     2: "Blue Tint",
@@ -125,6 +138,7 @@ def main():
         # to actual pixel coordinates, and collect all of them together.
         h, w, _ = frame.shape
         points = []
+        hands_pixel_landmarks = []
         for hand_landmarks in result.hand_landmarks:
             thumb_tip = hand_landmarks[4]
             pointer_finger_tip = hand_landmarks[8]
@@ -132,6 +146,12 @@ def main():
             pointer_x, pointer_y = int(pointer_finger_tip.x * w), int(pointer_finger_tip.y * h)
             points.append((thumb_x, thumb_y))
             points.append((pointer_x, pointer_y))
+
+            # All 21 landmarks for this hand, converted to pixel coords, so
+            # we can draw the full finger skeleton further down.
+            hands_pixel_landmarks.append(
+                [(int(lm.x * w), int(lm.y * h)) for lm in hand_landmarks]
+            )
 
         # Only draw once both hands are visible (4 points: thumb+index x2).
         if len(points) == 4:
@@ -152,6 +172,15 @@ def main():
             cv2.polylines(frame, [poly_points], isClosed=True, color=(0, 255, 0), thickness=2)
             effect_frame = apply_effect(frame, current_effect)
             frame = np.where(mask[:, :, None] == 255, effect_frame, frame)
+
+        # Draw each hand's finger skeleton (joints as dots, bones as lines)
+        # on top of everything else so it stays visible even inside the
+        # effect region.
+        for landmarks in hands_pixel_landmarks:
+            for start_idx, end_idx in HAND_CONNECTIONS:
+                cv2.line(frame, landmarks[start_idx], landmarks[end_idx], (255, 255, 255), 1)
+            for point in landmarks:
+                cv2.circle(frame, point, 4, (0, 255, 255), -1)
 
         # Show which effect is active and how to change it.
         cv2.putText(
