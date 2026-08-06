@@ -33,6 +33,7 @@ HAND_CONNECTIONS = [
 ]
 
 EFFECT_NAMES = {
+    0: "Invisibility",
     1: "Blur",
     2: "Blue Tint",
     3: "Green Tint",
@@ -45,8 +46,13 @@ EFFECT_NAMES = {
 }
 
 
-def apply_effect(frame, effect):
+def apply_effect(frame, effect, background=None):
     """Return a full-frame version of `frame` with `effect` applied."""
+    if effect == 0:  # invisibility - reveal the captured empty background
+        if background is not None and background.shape == frame.shape:
+            return background
+        return frame
+
     if effect == 1:
         return cv2.GaussianBlur(frame, (25, 25), 0)
 
@@ -108,6 +114,10 @@ def main():
 
     cap = cv2.VideoCapture(0)
     current_effect = 1
+    # Snapshot of the empty scene, used by the invisibility effect. Starts
+    # unset - captured from the first frame, and recapturable anytime with 'b'.
+    background = None
+    recapture_background = True
 
     # Create the window up front and force it fullscreen, so it doesn't
     # require the user to manually maximize it each run.
@@ -121,6 +131,13 @@ def main():
 
         # Selfie-view: mirror the frame so it feels natural to interact with.
         frame = cv2.flip(frame, 1)
+
+        # Capture a clean (undrawn-on) copy of this frame as the "empty"
+        # background for the invisibility effect. Happens once at startup,
+        # and again anytime 'b' is pressed (e.g. after stepping out of frame).
+        if recapture_background:
+            background = frame.copy()
+            recapture_background = False
 
         # MediaPipe expects RGB; OpenCV gives BGR. Wrap the converted frame
         # in MediaPipe's own image container before feeding it to the model.
@@ -170,7 +187,7 @@ def main():
             mask = np.zeros((h, w), dtype=np.uint8)
             cv2.fillPoly(mask, [poly_points], 255)
             cv2.polylines(frame, [poly_points], isClosed=True, color=(0, 255, 0), thickness=2)
-            effect_frame = apply_effect(frame, current_effect)
+            effect_frame = apply_effect(frame, current_effect, background)
             frame = np.where(mask[:, :, None] == 255, effect_frame, frame)
 
         # Draw each hand's finger skeleton (joints as dots, bones as lines)
@@ -185,7 +202,7 @@ def main():
         # Show which effect is active and how to change it.
         cv2.putText(
             frame,
-            f"[{current_effect}] {EFFECT_NAMES[current_effect]}  (keys 1-9 to change)",
+            f"[{current_effect}] {EFFECT_NAMES[current_effect]}  (0-9 effects, b = recapture background)",
             (10, 30),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.7,
@@ -197,8 +214,10 @@ def main():
         key = cv2.waitKey(5) & 0xFF
         if key == ord("q"):
             break
-        elif ord("1") <= key <= ord("9"):
+        elif ord("0") <= key <= ord("9"):
             current_effect = key - ord("0")
+        elif key == ord("b"):
+            recapture_background = True
 
     cap.release()
     cv2.destroyAllWindows()
